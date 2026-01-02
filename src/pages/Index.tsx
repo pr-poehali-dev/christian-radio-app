@@ -1,226 +1,208 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import Icon from '@/components/ui/icon';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Slider } from '@/components/ui/slider';
 
-interface Station {
-  id: number;
-  name: string;
-  genre: string;
-  live: boolean;
-  listeners: number;
-  streamUrl: string;
-}
-
-const stations: Station[] = [
-  { id: 1, name: 'Благословение FM', genre: 'Современное прославление', live: true, listeners: 1247, streamUrl: '#' },
-  { id: 2, name: 'Святая Волна', genre: 'Традиционные гимны', live: true, listeners: 892, streamUrl: '#' },
-  { id: 3, name: 'Голос Веры', genre: 'Проповеди и учение', live: false, listeners: 654, streamUrl: '#' },
-  { id: 4, name: 'Надежда 24/7', genre: 'Христианская музыка', live: true, listeners: 2103, streamUrl: '#' },
-  { id: 5, name: 'Свет Истины', genre: 'Духовные беседы', live: false, listeners: 431, streamUrl: '#' },
-  { id: 6, name: 'Радость Спасения', genre: 'Прославление', live: true, listeners: 1678, streamUrl: '#' },
-];
+const STREAM_URL = 'https://radio-grace.site/public/radio_grace';
 
 const Index = () => {
-  const [currentStation, setCurrentStation] = useState<Station | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [history, setHistory] = useState<Array<Station & { playedAt: string }>>([]);
+  const [volume, setVolume] = useState(75);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [audioLevels, setAudioLevels] = useState<number[]>(Array(20).fill(0));
 
-  const handlePlay = (station: Station) => {
-    setCurrentStation(station);
-    setIsPlaying(true);
-    
-    const playedAt = new Date().toLocaleString('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit'
+  useEffect(() => {
+    audioRef.current = new Audio(STREAM_URL);
+    audioRef.current.preload = 'none';
+    audioRef.current.volume = volume / 100;
+
+    audioRef.current.addEventListener('playing', () => {
+      setIsPlaying(true);
+      setIsLoading(false);
+      setError(null);
     });
-    
-    setHistory(prev => {
-      const filtered = prev.filter(h => h.id !== station.id);
-      return [{ ...station, playedAt }, ...filtered].slice(0, 10);
+
+    audioRef.current.addEventListener('pause', () => {
+      setIsPlaying(false);
     });
+
+    audioRef.current.addEventListener('waiting', () => {
+      setIsLoading(true);
+    });
+
+    audioRef.current.addEventListener('error', (e) => {
+      setIsPlaying(false);
+      setIsLoading(false);
+      setError('Не удалось подключиться к радио');
+      console.error('Audio error:', e);
+    });
+
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100;
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    let animationFrame: number;
+    
+    const animateWaves = () => {
+      if (isPlaying) {
+        setAudioLevels(prev => 
+          prev.map(() => Math.random() * 60 + 20)
+        );
+      } else {
+        setAudioLevels(prev => 
+          prev.map(level => Math.max(0, level - 5))
+        );
+      }
+      animationFrame = requestAnimationFrame(animateWaves);
+    };
+
+    animateWaves();
+    return () => cancelAnimationFrame(animationFrame);
+  }, [isPlaying]);
+
+  const togglePlayPause = async () => {
+    if (!audioRef.current) return;
+
+    try {
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        setIsLoading(true);
+        setError(null);
+        await audioRef.current.play();
+      }
+    } catch (err) {
+      setError('Ошибка воспроизведения');
+      setIsPlaying(false);
+      setIsLoading(false);
+      console.error('Playback error:', err);
+    }
   };
 
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
+  const handleVolumeChange = (values: number[]) => {
+    setVolume(values[0]);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/20 via-background to-secondary/20">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <header className="text-center mb-12 animate-fade-in">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-primary to-secondary rounded-2xl flex items-center justify-center shadow-lg">
-              <Icon name="Radio" size={32} className="text-white" />
-            </div>
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-              Христианское Радио
-            </h1>
+    <div className="min-h-screen bg-gradient-to-br from-primary/10 via-background to-secondary/10 flex items-center justify-center p-4">
+      <Card className="w-full max-w-2xl overflow-hidden border-2 shadow-2xl animate-scale-in">
+        <div className="relative h-64 bg-gradient-to-br from-primary via-secondary to-accent overflow-hidden">
+          <div className="absolute inset-0 bg-black/30"></div>
+          
+          <div className="absolute inset-0 flex items-center justify-center gap-1 px-8">
+            {audioLevels.map((level, i) => (
+              <div
+                key={i}
+                className="flex-1 bg-white/40 rounded-full transition-all duration-200 ease-out"
+                style={{
+                  height: `${level}%`,
+                  minHeight: '4px',
+                  boxShadow: isPlaying ? '0 0 10px rgba(255,255,255,0.5)' : 'none'
+                }}
+              />
+            ))}
           </div>
-          <p className="text-muted-foreground text-lg">Слушайте христианские радиостанции онлайн</p>
-        </header>
 
-        <Tabs defaultValue="stations" className="space-y-8">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 h-14">
-            <TabsTrigger value="stations" className="text-base">
-              <Icon name="Radio" size={18} className="mr-2" />
-              Станции
-            </TabsTrigger>
-            <TabsTrigger value="history" className="text-base">
-              <Icon name="History" size={18} className="mr-2" />
-              История
-            </TabsTrigger>
-          </TabsList>
+          <div className="absolute top-6 left-6">
+            <Badge className="bg-white/20 text-white backdrop-blur-sm border-white/40 text-sm px-3 py-1">
+              <div className={`w-2 h-2 rounded-full mr-2 ${isPlaying ? 'bg-green-400 animate-pulse-glow' : 'bg-gray-400'}`}></div>
+              {isPlaying ? 'В ЭФИРЕ' : 'НЕ В ЭФИРЕ'}
+            </Badge>
+          </div>
 
-          <TabsContent value="stations" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {stations.map((station, index) => (
-                <Card 
-                  key={station.id} 
-                  className="group overflow-hidden hover:shadow-2xl transition-all duration-300 hover:-translate-y-1 border-2 animate-slide-up"
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  <div className="relative h-48 bg-gradient-to-br from-primary via-secondary to-accent overflow-hidden">
-                    <div className="absolute inset-0 bg-black/20"></div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Icon name="Music2" size={64} className="text-white/30" />
-                    </div>
-                    {station.live && (
-                      <Badge className="absolute top-4 right-4 bg-red-500 text-white animate-pulse-glow border-0">
-                        <div className="w-2 h-2 bg-white rounded-full mr-2"></div>
-                        LIVE
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <div>
-                      <h3 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors">
-                        {station.name}
-                      </h3>
-                      <p className="text-sm text-muted-foreground flex items-center gap-2">
-                        <Icon name="Music" size={14} />
-                        {station.genre}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground flex items-center gap-2">
-                        <Icon name="Users" size={14} />
-                        {station.listeners.toLocaleString()}
-                      </span>
-                      <Button
-                        onClick={() => handlePlay(station)}
-                        size="lg"
-                        className="rounded-full w-14 h-14 p-0 bg-gradient-to-r from-primary to-secondary hover:scale-110 transition-transform shadow-lg"
-                      >
-                        <Icon name="Play" size={24} className="text-white" />
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center text-white">
+              <Icon name="Radio" size={80} className="mx-auto mb-4 opacity-90" />
+              <h1 className="text-4xl font-bold drop-shadow-lg">Радио Благодать</h1>
+              <p className="text-lg opacity-90 mt-2">Христианское радио онлайн</p>
             </div>
-          </TabsContent>
+          </div>
+        </div>
 
-          <TabsContent value="history" className="space-y-4">
-            {history.length === 0 ? (
-              <Card className="p-12 text-center">
-                <Icon name="History" size={64} className="mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-xl font-semibold mb-2">История пуста</h3>
-                <p className="text-muted-foreground">Начните слушать станции, чтобы увидеть историю</p>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {history.map((item, index) => (
-                  <Card 
-                    key={`${item.id}-${item.playedAt}`} 
-                    className="p-6 hover:shadow-lg transition-all hover:border-primary animate-fade-in"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                          <Icon name="Radio" size={28} className="text-white" />
-                        </div>
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-lg mb-1">{item.name}</h4>
-                          <p className="text-sm text-muted-foreground">{item.genre}</p>
-                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                            <Icon name="Clock" size={12} />
-                            {item.playedAt}
-                          </p>
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => handlePlay(item)}
-                        size="lg"
-                        variant="outline"
-                        className="rounded-full w-12 h-12 p-0 hover:bg-primary hover:text-white"
-                      >
-                        <Icon name="Play" size={20} />
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+        <div className="p-8 space-y-8">
+          <div className="flex items-center justify-center gap-6">
+            <Button
+              onClick={togglePlayPause}
+              disabled={isLoading}
+              size="lg"
+              className="w-24 h-24 rounded-full bg-gradient-to-r from-primary to-secondary hover:scale-110 transition-all shadow-xl disabled:opacity-50"
+            >
+              {isLoading ? (
+                <Icon name="Loader2" size={40} className="text-white animate-spin" />
+              ) : (
+                <Icon name={isPlaying ? "Pause" : "Play"} size={40} className="text-white" />
+              )}
+            </Button>
+          </div>
 
-        {currentStation && (
-          <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-lg border-t shadow-2xl animate-slide-up z-50">
-            <div className="container mx-auto px-4 py-6">
-              <div className="flex items-center gap-6 max-w-4xl mx-auto">
-                <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg flex-shrink-0">
-                  <Icon name="Radio" size={36} className="text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-bold text-lg truncate">{currentStation.name}</h4>
-                  <p className="text-sm text-muted-foreground truncate">{currentStation.genre}</p>
-                  {currentStation.live && (
-                    <Badge className="mt-2 bg-red-500 text-white animate-pulse-glow border-0 text-xs">
-                      <div className="w-1.5 h-1.5 bg-white rounded-full mr-1.5"></div>
-                      LIVE
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-12 h-12 rounded-full hover:bg-primary/10"
-                  >
-                    <Icon name="SkipBack" size={24} />
-                  </Button>
-                  <Button
-                    onClick={togglePlayPause}
-                    size="lg"
-                    className="w-16 h-16 rounded-full bg-gradient-to-r from-primary to-secondary hover:scale-110 transition-transform shadow-xl"
-                  >
-                    <Icon name={isPlaying ? "Pause" : "Play"} size={28} className="text-white" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-12 h-12 rounded-full hover:bg-primary/10"
-                  >
-                    <Icon name="SkipForward" size={24} />
-                  </Button>
-                  <div className="flex items-center gap-2 ml-4">
-                    <Icon name="Volume2" size={20} className="text-muted-foreground" />
-                    <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="w-3/4 h-full bg-gradient-to-r from-primary to-secondary rounded-full"></div>
-                    </div>
-                  </div>
-                </div>
+          {error && (
+            <div className="text-center text-destructive text-sm bg-destructive/10 p-3 rounded-lg animate-fade-in">
+              <Icon name="AlertCircle" size={16} className="inline mr-2" />
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <Icon name="Volume2" size={18} />
+                Громкость
+              </label>
+              <span className="text-sm text-muted-foreground">{volume}%</span>
+            </div>
+            <Slider
+              value={[volume]}
+              onValueChange={handleVolumeChange}
+              max={100}
+              step={1}
+              className="cursor-pointer"
+            />
+          </div>
+
+          <div className="bg-muted/50 rounded-lg p-4 space-y-2 animate-fade-in">
+            <div className="flex items-start gap-3">
+              <Icon name="Music" size={20} className="text-primary mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-sm">Сейчас в эфире</h3>
+                <p className="text-sm text-muted-foreground">
+                  Христианские песни прославления и проповеди
+                </p>
               </div>
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="grid grid-cols-3 gap-4 pt-4 border-t">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-primary">24/7</div>
+              <div className="text-xs text-muted-foreground">Онлайн</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-primary">100%</div>
+              <div className="text-xs text-muted-foreground">Христианская</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-primary">🙏</div>
+              <div className="text-xs text-muted-foreground">Благословение</div>
+            </div>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };
